@@ -32,12 +32,12 @@ st.markdown(
     <style>
     .watermark {
         position: fixed;
-        bottom: 15px;
-        right: 15px;
-        font-size: 14px;
-        color: rgba(128, 128, 128, 0.6); /* Semi-transparent grey */
-        z-index: 9999;
-        pointer-events: none; /* Prevents the text from blocking mouse clicks */
+        bottom: 20px;
+        left: 20px; /* Moved to the left side */
+        font-size: 16px; /* Made slightly larger */
+        color: #888888; /* Solid grey */
+        z-index: 999999; /* Forced to the very front */
+        pointer-events: none;
         font-style: italic;
         font-weight: bold;
     }
@@ -46,7 +46,6 @@ st.markdown(
     """,
     unsafe_allow_html=True
 )
-
 
 # --- INITIALIZE MEMORY ---
 if 'patient_list' not in st.session_state:
