@@ -27,7 +27,7 @@ st.markdown(
 )
 
 # --- 🔒 SECURITY GATE ---
-HOSPITAL_PASSWORD = "2026" 
+HOSPITAL_PASSWORD = "123" 
 
 if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
@@ -63,12 +63,9 @@ with st.sidebar:
         
         branch = st.selectbox("Hospital Branch", ["New Colony", "Mihan"])
         
-        # --- NEW: DATE PICKER ---
-        # Defaults to tomorrow, but lets you select any date
         tomorrow = datetime.now() + timedelta(days=1)
         surgery_date = st.date_input("Date of Surgery", value=tomorrow)
         
-        # Foolproof Time Selector
         start_time = datetime.strptime("07:45 AM", "%I:%M %p")
         time_options = [(start_time + timedelta(minutes=15*i)).strftime("%I:%M %p") for i in range(42)]
         reporting_time = st.selectbox("Reporting Time", time_options)
@@ -92,7 +89,7 @@ with st.sidebar:
                     "Name": patient_name,
                     "Phone": phone_number.replace("+", ""), 
                     "Branch": branch,
-                    "Date": surgery_date.strftime("%d.%m.%Y"), # Formats the date to match your template
+                    "Date": surgery_date.strftime("%d.%m.%Y"), 
                     "Time": reporting_time,
                     "Anesthesia": anesthesia,
                     "Comorbidities": comorbidities
@@ -102,24 +99,27 @@ with st.sidebar:
 # --- MAIN DASHBOARD: THE QUEUE ---
 st.title("📋 Surgery Dispatch Queue")
 
+# --- NEW: QR CODE COPY STATION ---
+with st.expander("📲 Payment QR Code (Click here to open)", expanded=False):
+    st.info("💡 **How to send the image:** Right-click the QR code below and select **'Copy Image'**. After clicking the green 'Send WhatsApp' button for a patient, click into the chat box and press **Ctrl + V** to paste the image before hitting send!")
+    try:
+        st.image("qrcode.jpg", width=300)
+    except Exception as e:
+        st.warning("⚠️ Cannot find 'qrcode.jpg'. Make sure the image is uploaded to your GitHub repository!")
+
 if len(st.session_state.patient_list) == 0:
     st.info("👈 Your queue is empty. Start adding patients from the sidebar menu.")
 else:
     st.markdown(f"**Total Patients in Queue:** {len(st.session_state.patient_list)}")
     st.divider()
 
-    # --- INDIVIDUAL PATIENT CARDS ---
     for index, pt in enumerate(st.session_state.patient_list):
         
-        # Calculate 2 hours prior to reporting time for medications/breakfast
         rep_time_obj = datetime.strptime(pt['Time'], "%I:%M %p")
         two_hours_prior = (rep_time_obj - timedelta(hours=2)).strftime("%I:%M %p")
-        
-        # Pull the specific date saved for this patient
         dos = pt['Date']
         
-        # --- THE SURAJ EYE INSTITUTE LOGIC MATRIX ---
-        # 1. Standard Greeting with Date
+        # 1. Standard Greeting
         draft = f"Dear {pt['Name']},\nGreetings from Suraj Eye Institute, Nagpur.\nYour surgery has been scheduled on {dos}.\n\n"
         
         # 2. Clinical Instructions
@@ -143,11 +143,9 @@ else:
             elif pt['Comorbidities'] == "Both HTN & DM":
                 draft += f"You should not eat anything after 12 am on {dos}. You need to take anti-hypertensive medication with 50 ml (Quarter glass) water in the morning at {two_hours_prior} with 2 sips of water if taking, and not have any Diabetes medication on {dos}. Please bring all your reports and your fitness. Kindly avoid taking aspirin and antiplatelet medication."
 
-        # 3. Standard Footer
-        draft += f"\n\nReport to hospital at Suraj Eye Institute {pt['Branch']} branch at {pt['Time']}.\n\nThank you.\nTeam Suraj Eye Institute."
-        
-        # Optional: Add QR Link at the very bottom
-        draft += "\n\n(View location & payment QR: [Insert Link Here])"
+        # 3. Standard Footer & Payment details
+        draft += f"\n\nReport to hospital at Suraj Eye Institute {pt['Branch']} branch at {pt['Time']}."
+        draft += "\n\nKindly make your surgery payments using the UPI details above before surgery. Kind regards.\nSEI Services."
 
         # --- UI CARD ---
         with st.container():
@@ -155,12 +153,11 @@ else:
             
             with col1:
                 st.subheader(f"👤 {pt['Name']}")
-                # Now displays both the date and time clearly
                 st.write(f"**{pt['Branch']}** | {dos} @ {pt['Time']}")
                 st.caption(f"{pt['Anesthesia']} | {pt['Comorbidities']}")
             
             with col2:
-                final_msg = st.text_area("Message Preview:", value=draft, height=240, key=f"msg_{index}", label_visibility="collapsed")
+                final_msg = st.text_area("Message Preview:", value=draft, height=260, key=f"msg_{index}", label_visibility="collapsed")
             
             with col3:
                 encoded_message = urllib.parse.quote(final_msg)
