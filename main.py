@@ -27,7 +27,7 @@ st.markdown(
 )
 
 # --- 🔒 SECURITY GATE ---
-HOSPITAL_PASSWORD = "mihan_eye_2026" 
+HOSPITAL_PASSWORD = "2026" 
 
 if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
