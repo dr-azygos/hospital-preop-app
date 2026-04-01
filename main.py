@@ -1,5 +1,6 @@
 import streamlit as st
 import urllib.parse
+from datetime import datetime, timedelta
 
 # --- APP CONFIGURATION ---
 st.set_page_config(page_title="Pre-Op Dispatcher", page_icon="👁️", layout="wide")
@@ -63,8 +64,16 @@ with st.sidebar:
         # Standard WhatsApp links work best with just the country code and number, no '+'
         phone_number = st.text_input("WhatsApp Number*", value="91", help="Country code + number (e.g., 919876543210)") 
         
+        # --- NEW FOOLPROOF TIME SELECTOR ---
         branch = st.selectbox("Hospital Branch", ["New Colony", "Mihan"])
-        reporting_time = st.time_input("Reporting Time")
+        
+        # Generate time slots from 7:45 AM to 6:00 PM in 15-minute jumps
+        start_time = datetime.strptime("07:45 AM", "%I:%M %p")
+        time_options = [(start_time + timedelta(minutes=15*i)).strftime("%I:%M %p") for i in range(42)]
+        
+        # Use a dropdown instead of a free-text time input
+        reporting_time = st.selectbox("Reporting Time", time_options)
+        # -----------------------------------
         
         st.markdown("### Clinical Details")
         anesthesia = st.radio("Anesthesia / Diet", ["Local Anesthesia (LA)", "Fasting (NPM)"])
