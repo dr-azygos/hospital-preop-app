@@ -1,6 +1,8 @@
 import streamlit as st
 import urllib.parse
 from datetime import datetime, timedelta
+import json
+from github import Github # The new cloud database tool
 
 # --- APP CONFIGURATION ---
 st.set_page_config(page_title="Pre-Op Dispatcher", page_icon="👁️", layout="wide")
@@ -9,33 +11,20 @@ st.set_page_config(page_title="Pre-Op Dispatcher", page_icon="👁️", layout="
 st.markdown(
     """
     <style>
-    .watermark {
-        position: fixed;
-        bottom: 20px;
-        left: 20px;
-        font-size: 16px;
-        color: #888888;
-        z-index: 999999;
-        pointer-events: none;
-        font-style: italic;
-        font-weight: bold;
-    }
+    .watermark { position: fixed; bottom: 20px; left: 20px; font-size: 16px; color: #888888; z-index: 999999; pointer-events: none; font-style: italic; font-weight: bold; }
     </style>
     <div class="watermark">Designed by dr.azygos</div>
-    """,
-    unsafe_allow_html=True
+    """, unsafe_allow_html=True
 )
 
 # --- 🔒 SECURITY GATE ---
-HOSPITAL_PASSWORD = "123" 
-
+HOSPITAL_PASSWORD = "mihan_eye_2026" 
 if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
 
 if not st.session_state.authenticated:
     st.title("🔒 Authorized Personnel Only")
     st.info("Please enter the staff password to access the dispatch queue.")
-    
     pwd = st.text_input("Password", type="password")
     if st.button("Unlock Dashboard", type="primary"):
         if pwd == HOSPITAL_PASSWORD:
@@ -43,7 +32,6 @@ if not st.session_state.authenticated:
             st.rerun() 
         else:
             st.error("❌ Incorrect Password.")
-            
     st.stop() 
 
 # --- INITIALIZE MEMORY ---
@@ -53,14 +41,41 @@ if 'patient_list' not in st.session_state:
 def delete_patient(index):
     st.session_state.patient_list.pop(index)
 
+# --- CLOUD DATABASE FUNCTIONS ---
+def get_github_repo():
+    # Logs into GitHub using the secret badge you saved in Streamlit Settings
+    g = Github(st.secrets["GITHUB_TOKEN"])
+    return g.get_repo(st.secrets["GITHUB_REPO"])
+
+def save_to_cloud(data_list):
+    try:
+        repo = get_github_repo()
+        contents = repo.get_contents("database.json")
+        json_string = json.dumps(data_list, indent=4)
+        # Overwrites the old database.json with your new list
+        repo.update_file(contents.path, "Backup from App", json_string, contents.sha)
+        return True
+    except Exception as e:
+        st.error(f"Cloud Save Error: {e}")
+        return False
+
+def load_from_cloud():
+    try:
+        repo = get_github_repo()
+        contents = repo.get_contents("database.json")
+        # Reads the file and turns it back into a Python list
+        return json.loads(contents.decoded_content.decode("utf-8"))
+    except Exception as e:
+        st.error(f"Cloud Load Error: {e}")
+        return []
+
 # --- SIDEBAR: DATA ENTRY ---
 with st.sidebar:
     st.header("➕ Add New Patient")
     
     with st.form("patient_form", clear_on_submit=True):
         patient_name = st.text_input("Patient Name*")
-        phone_number = st.text_input("WhatsApp Number*", value="91", help="Country code + number (e.g., 919876543210)") 
-        
+        phone_number = st.text_input("WhatsApp Number*", value="91", help="Country code + number") 
         branch = st.selectbox("Hospital Branch", ["New Colony", "Mihan"])
         
         tomorrow = datetime.now() + timedelta(days=1)
@@ -72,12 +87,7 @@ with st.sidebar:
         
         st.markdown("### Clinical Details")
         anesthesia = st.radio("Anesthesia / Diet", ["Local Anesthesia (LA)", "Fasting (NPM)"])
-        comorbidities = st.selectbox("Comorbidities", [
-            "None (No HTN, No DM)", 
-            "Only HTN", 
-            "Only DM", 
-            "Both HTN & DM"
-        ])
+        comorbidities = st.selectbox("Comorbidities", ["None (No HTN, No DM)", "Only HTN", "Only DM", "Both HTN & DM"])
         
         submitted = st.form_submit_button("Add to Queue", type="primary", use_container_width=True)
 
@@ -86,43 +96,51 @@ with st.sidebar:
                 st.error("⚠️ Please provide a valid name and number.")
             else:
                 st.session_state.patient_list.append({
-                    "Name": patient_name,
-                    "Phone": phone_number.replace("+", ""), 
-                    "Branch": branch,
-                    "Date": surgery_date.strftime("%d.%m.%Y"), 
-                    "Time": reporting_time,
-                    "Anesthesia": anesthesia,
-                    "Comorbidities": comorbidities
+                    "Name": patient_name, "Phone": phone_number.replace("+", ""), "Branch": branch,
+                    "Date": surgery_date.strftime("%d.%m.%Y"), "Time": reporting_time,
+                    "Anesthesia": anesthesia, "Comorbidities": comorbidities
                 })
                 st.success(f"Added {patient_name}!")
+
+    # --- THE NEW CLOUD SYNC BUTTONS ---
+    st.divider()
+    st.header("☁️ Cloud Sync")
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("💾 Save", use_container_width=True):
+            with st.spinner("Saving to GitHub..."):
+                if save_to_cloud(st.session_state.patient_list):
+                    st.success("Saved!")
+    with col2:
+        if st.button("🔄 Load", use_container_width=True):
+            with st.spinner("Fetching data..."):
+                st.session_state.patient_list = load_from_cloud()
+                st.rerun()
 
 # --- MAIN DASHBOARD: THE QUEUE ---
 st.title("📋 Surgery Dispatch Queue")
 
-# --- NEW: QR CODE COPY STATION ---
 with st.expander("📲 Payment QR Code (Click here to open)", expanded=False):
-    st.info("💡 **How to send the image:** Right-click the QR code below and select **'Copy Image'**. After clicking the green 'Send WhatsApp' button for a patient, click into the chat box and press **Ctrl + V** to paste the image before hitting send!")
+    st.info("💡 Right-click the QR code below and select **'Copy Image'**. Paste (Ctrl+V) into WhatsApp before sending!")
     try:
         st.image("qrcode.jpg", width=300)
-    except Exception as e:
-        st.warning("⚠️ Cannot find 'qrcode.jpg'. Make sure the image is uploaded to your GitHub repository!")
+    except Exception:
+        st.warning("⚠️ Cannot find 'qrcode.jpg'. Make sure it is on GitHub!")
 
 if len(st.session_state.patient_list) == 0:
-    st.info("👈 Your queue is empty. Start adding patients from the sidebar menu.")
+    st.info("👈 Your queue is empty. Start adding patients or click 'Load' in the sidebar.")
 else:
     st.markdown(f"**Total Patients in Queue:** {len(st.session_state.patient_list)}")
     st.divider()
 
     for index, pt in enumerate(st.session_state.patient_list):
-        
         rep_time_obj = datetime.strptime(pt['Time'], "%I:%M %p")
         two_hours_prior = (rep_time_obj - timedelta(hours=2)).strftime("%I:%M %p")
         dos = pt['Date']
         
-        # 1. Standard Greeting
         draft = f"Dear {pt['Name']},\nGreetings from Suraj Eye Institute, Nagpur.\nYour surgery has been scheduled on {dos}.\n\n"
         
-        # 2. Clinical Instructions
         if pt['Anesthesia'] == "Local Anesthesia (LA)":
             if pt['Comorbidities'] == "None (No HTN, No DM)":
                 draft += f"Have a light breakfast of sugarless tea and two Marie biscuits at {two_hours_prior}. Please bring all your reports. Also bring your fitness along."
@@ -143,38 +161,25 @@ else:
             elif pt['Comorbidities'] == "Both HTN & DM":
                 draft += f"You should not eat anything after 12 am on {dos}. You need to take anti-hypertensive medication with 50 ml (Quarter glass) water in the morning at {two_hours_prior} with 2 sips of water if taking, and not have any Diabetes medication on {dos}. Please bring all your reports and your fitness. Kindly avoid taking aspirin and antiplatelet medication."
 
-        # 3. Standard Footer & Payment details
         draft += f"\n\nReport to hospital at Suraj Eye Institute {pt['Branch']} branch at {pt['Time']}."
         draft += "\n\nKindly make your surgery payments using the UPI details above before surgery. Kind regards.\nSEI Services."
 
-        # --- UI CARD ---
         with st.container():
             col1, col2, col3 = st.columns([1, 3, 1])
-            
             with col1:
                 st.subheader(f"👤 {pt['Name']}")
                 st.write(f"**{pt['Branch']}** | {dos} @ {pt['Time']}")
                 st.caption(f"{pt['Anesthesia']} | {pt['Comorbidities']}")
-            
             with col2:
                 final_msg = st.text_area("Message Preview:", value=draft, height=260, key=f"msg_{index}", label_visibility="collapsed")
-            
             with col3:
                 encoded_message = urllib.parse.quote(final_msg)
                 whatsapp_url = f"https://wa.me/{pt['Phone']}?text={encoded_message}"
-                
-                st.markdown(f"""
-                    <a href="{whatsapp_url}" target="_blank" style="text-decoration: none;">
-                        <button style="background-color:#25D366; color:white; padding:10px; border:none; border-radius:5px; cursor:pointer; width:100%; font-weight:bold; margin-bottom:10px;">
-                            💬 Send WhatsApp
-                        </button>
-                    </a>
-                    """, unsafe_allow_html=True)
-                
+                st.markdown(f"""<a href="{whatsapp_url}" target="_blank" style="text-decoration: none;"><button style="background-color:#25D366; color:white; padding:10px; border:none; border-radius:5px; cursor:pointer; width:100%; font-weight:bold; margin-bottom:10px;">💬 Send WhatsApp</button></a>""", unsafe_allow_html=True)
                 st.button("❌ Remove", key=f"del_{index}", on_click=delete_patient, args=(index,), use_container_width=True)
-            
             st.divider()
 
-    if st.button("🗑️ Clear Entire List (End of Day)"):
+    if st.button("🗑️ Clear List (End of Day)"):
         st.session_state.patient_list = []
+        save_to_cloud([]) # Wipes the cloud memory clean too!
         st.rerun()
