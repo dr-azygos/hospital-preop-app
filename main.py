@@ -5,9 +5,29 @@ from datetime import datetime, timedelta
 # --- APP CONFIGURATION ---
 st.set_page_config(page_title="Pre-Op Dispatcher", page_icon="👁️", layout="wide")
 
+# --- DR. AZYGOS WATERMARK ---
+st.markdown(
+    """
+    <style>
+    .watermark {
+        position: fixed;
+        bottom: 20px;
+        left: 20px;
+        font-size: 16px;
+        color: #888888;
+        z-index: 999999;
+        pointer-events: none;
+        font-style: italic;
+        font-weight: bold;
+    }
+    </style>
+    <div class="watermark">Designed by dr.azygos</div>
+    """,
+    unsafe_allow_html=True
+)
+
 # --- 🔒 SECURITY GATE ---
-# Change this to whatever password you want your staff to use
-HOSPITAL_PASSWORD = "123" 
+HOSPITAL_PASSWORD = "mihan_eye_2026" 
 
 if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
@@ -24,29 +44,7 @@ if not st.session_state.authenticated:
         else:
             st.error("❌ Incorrect Password.")
             
-    st.stop() # Stops the rest of the app from loading until unlocked
-
-
-# --- DR. AZYGOS WATERMARK ---
-st.markdown(
-    """
-    <style>
-    .watermark {
-        position: fixed;
-        bottom: 20px;
-        left: 20px; /* Moved to the left side */
-        font-size: 16px; /* Made slightly larger */
-        color: #888888; /* Solid grey */
-        z-index: 999999; /* Forced to the very front */
-        pointer-events: none;
-        font-style: italic;
-        font-weight: bold;
-    }
-    </style>
-    <div class="watermark">Designed by dr.azygos</div>
-    """,
-    unsafe_allow_html=True
-)
+    st.stop() 
 
 # --- INITIALIZE MEMORY ---
 if 'patient_list' not in st.session_state:
@@ -61,19 +59,19 @@ with st.sidebar:
     
     with st.form("patient_form", clear_on_submit=True):
         patient_name = st.text_input("Patient Name*")
-        # Standard WhatsApp links work best with just the country code and number, no '+'
         phone_number = st.text_input("WhatsApp Number*", value="91", help="Country code + number (e.g., 919876543210)") 
         
-        # --- NEW FOOLPROOF TIME SELECTOR ---
         branch = st.selectbox("Hospital Branch", ["New Colony", "Mihan"])
         
-        # Generate time slots from 7:45 AM to 6:00 PM in 15-minute jumps
+        # --- NEW: DATE PICKER ---
+        # Defaults to tomorrow, but lets you select any date
+        tomorrow = datetime.now() + timedelta(days=1)
+        surgery_date = st.date_input("Date of Surgery", value=tomorrow)
+        
+        # Foolproof Time Selector
         start_time = datetime.strptime("07:45 AM", "%I:%M %p")
         time_options = [(start_time + timedelta(minutes=15*i)).strftime("%I:%M %p") for i in range(42)]
-        
-        # Use a dropdown instead of a free-text time input
         reporting_time = st.selectbox("Reporting Time", time_options)
-        # -----------------------------------
         
         st.markdown("### Clinical Details")
         anesthesia = st.radio("Anesthesia / Diet", ["Local Anesthesia (LA)", "Fasting (NPM)"])
@@ -92,24 +90,17 @@ with st.sidebar:
             else:
                 st.session_state.patient_list.append({
                     "Name": patient_name,
-                    "Phone": phone_number.replace("+", ""), # Strips the + if accidentally typed
+                    "Phone": phone_number.replace("+", ""), 
                     "Branch": branch,
-                    "Time": reporting_time.strftime("%I:%M %p"),
+                    "Date": surgery_date.strftime("%d.%m.%Y"), # Formats the date to match your template
+                    "Time": reporting_time,
                     "Anesthesia": anesthesia,
                     "Comorbidities": comorbidities
                 })
                 st.success(f"Added {patient_name}!")
 
 # --- MAIN DASHBOARD: THE QUEUE ---
-st.title("📋 Tomorrow's Surgery Dispatch Queue")
-
-# Add your hospital's payment/location link here instead of the image file
-STANDARD_FOOTER = """
-
----
-🏥 *Hospital Administration*
-View our location and payment QR code here: [Insert Link Here]
-For any emergencies, call 0495-XXXXXXX."""
+st.title("📋 Surgery Dispatch Queue")
 
 if len(st.session_state.patient_list) == 0:
     st.info("👈 Your queue is empty. Start adding patients from the sidebar menu.")
@@ -120,18 +111,43 @@ else:
     # --- INDIVIDUAL PATIENT CARDS ---
     for index, pt in enumerate(st.session_state.patient_list):
         
-        # --- LOGIC MATRIX ---
-        draft = f"Dear {pt['Name']},\n\nThis is a reminder regarding your eye surgery tomorrow at our {pt['Branch']} branch.\nPlease report to the hospital at exactly {pt['Time']}.\n\n"
+        # Calculate 2 hours prior to reporting time for medications/breakfast
+        rep_time_obj = datetime.strptime(pt['Time'], "%I:%M %p")
+        two_hours_prior = (rep_time_obj - timedelta(hours=2)).strftime("%I:%M %p")
         
+        # Pull the specific date saved for this patient
+        dos = pt['Date']
+        
+        # --- THE SURAJ EYE INSTITUTE LOGIC MATRIX ---
+        # 1. Standard Greeting with Date
+        draft = f"Dear {pt['Name']},\nGreetings from Suraj Eye Institute, Nagpur.\nYour surgery has been scheduled on {dos}.\n\n"
+        
+        # 2. Clinical Instructions
         if pt['Anesthesia'] == "Local Anesthesia (LA)":
-            if pt['Comorbidities'] == "Both HTN & DM":
-                draft += "Instruction: Have a light breakfast with sugarless tea and 2 biscuits. Take your DM and HTN medication 2 hours prior to reporting."
-            else:
-                draft += f"[Insert LA + {pt['Comorbidities']} instructions here]"
+            if pt['Comorbidities'] == "None (No HTN, No DM)":
+                draft += f"Have a light breakfast of sugarless tea and two Marie biscuits at {two_hours_prior}. Please bring all your reports. Also bring your fitness along."
+            elif pt['Comorbidities'] == "Only DM":
+                draft += f"You should have a very light breakfast at {two_hours_prior}. And have your Diabetes medication on {dos}. Please bring all your reports and your fitness. Kindly avoid taking aspirin and antiplatelet medication."
+            elif pt['Comorbidities'] == "Only HTN":
+                draft += f"Have a light breakfast at {two_hours_prior}. You need to take anti-hypertensive medication. Please bring all your reports and your fitness. Kindly avoid taking aspirin and antiplatelet medication."
+            elif pt['Comorbidities'] == "Both HTN & DM":
+                draft += f"You should have a very light breakfast at {two_hours_prior}. You need to take anti-hypertensive medication and Diabetes medication. Please bring all your reports and your fitness. Kindly avoid taking aspirin and antiplatelet medication."
+                
         elif pt['Anesthesia'] == "Fasting (NPM)":
-            draft += f"[Insert NPM + {pt['Comorbidities']} logic here]"
+            if pt['Comorbidities'] == "None (No HTN, No DM)":
+                draft += f"You should not eat anything after 12 am on {dos}. Please bring all your reports and your fitness. Kindly avoid taking aspirin and antiplatelet medication."
+            elif pt['Comorbidities'] == "Only DM":
+                draft += f"You should not eat anything after 12 am on {dos}. Do not have any Diabetes medication on {dos}. Please bring all your reports and your fitness. Kindly avoid taking aspirin and antiplatelet medication."
+            elif pt['Comorbidities'] == "Only HTN":
+                draft += f"You should not eat anything after 12 am on {dos}. You need to take anti-hypertensive medication with 50 ml (Quarter glass) water in the morning at {two_hours_prior} with 2 sips of water. Please bring all your reports and your fitness. Kindly avoid taking aspirin and antiplatelet medication."
+            elif pt['Comorbidities'] == "Both HTN & DM":
+                draft += f"You should not eat anything after 12 am on {dos}. You need to take anti-hypertensive medication with 50 ml (Quarter glass) water in the morning at {two_hours_prior} with 2 sips of water if taking, and not have any Diabetes medication on {dos}. Please bring all your reports and your fitness. Kindly avoid taking aspirin and antiplatelet medication."
+
+        # 3. Standard Footer
+        draft += f"\n\nReport to hospital at Suraj Eye Institute {pt['Branch']} branch at {pt['Time']}.\n\nThank you.\nTeam Suraj Eye Institute."
         
-        draft += STANDARD_FOOTER
+        # Optional: Add QR Link at the very bottom
+        draft += "\n\n(View location & payment QR: [Insert Link Here])"
 
         # --- UI CARD ---
         with st.container():
@@ -139,18 +155,17 @@ else:
             
             with col1:
                 st.subheader(f"👤 {pt['Name']}")
-                st.write(f"**{pt['Branch']}** @ {pt['Time']}")
+                # Now displays both the date and time clearly
+                st.write(f"**{pt['Branch']}** | {dos} @ {pt['Time']}")
                 st.caption(f"{pt['Anesthesia']} | {pt['Comorbidities']}")
             
             with col2:
-                final_msg = st.text_area("Message Preview:", value=draft, height=150, key=f"msg_{index}", label_visibility="collapsed")
+                final_msg = st.text_area("Message Preview:", value=draft, height=240, key=f"msg_{index}", label_visibility="collapsed")
             
             with col3:
-                # --- SAFE CLICK-TO-CHAT BUTTON ---
                 encoded_message = urllib.parse.quote(final_msg)
                 whatsapp_url = f"https://wa.me/{pt['Phone']}?text={encoded_message}"
                 
-                # Creates a hyperlink disguised as a button
                 st.markdown(f"""
                     <a href="{whatsapp_url}" target="_blank" style="text-decoration: none;">
                         <button style="background-color:#25D366; color:white; padding:10px; border:none; border-radius:5px; cursor:pointer; width:100%; font-weight:bold; margin-bottom:10px;">
