@@ -38,7 +38,6 @@ if not st.session_state.authenticated:
 if 'patient_list' not in st.session_state:
     st.session_state.patient_list = []
 
-# Generate standardized options so both the sidebar and edit menus can use them
 BRANCHES = ["New Colony", "Mihan"]
 ANESTHESIA_OPTS = ["Local Anesthesia (LA)", "Fasting (NPM)"]
 COMORB_OPTS = ["None (No HTN, No DM)", "Only HTN", "Only DM", "Both HTN & DM"]
@@ -176,14 +175,13 @@ else:
                 st.write(f"**{pt['Branch']}** | {dos} @ {pt['Time']}")
                 st.caption(f"{pt['Anesthesia']} | {pt['Comorbidities']}")
                 
-                # --- NEW: EDIT DETAILS TOOL ---
+                # --- EDIT DETAILS TOOL ---
                 with st.expander("✏️ Edit Details"):
                     with st.form(f"edit_form_{index}"):
                         e_name = st.text_input("Name", pt['Name'])
                         e_phone = st.text_input("Phone", pt['Phone'])
                         e_branch = st.selectbox("Branch", BRANCHES, index=BRANCHES.index(pt['Branch']) if pt['Branch'] in BRANCHES else 0)
                         
-                        # Convert saved string back to a date object for the calendar
                         saved_date = datetime.strptime(pt['Date'], "%d.%m.%Y").date()
                         e_date = st.date_input("Date", saved_date)
                         
@@ -197,6 +195,9 @@ else:
                                 "Date": e_date.strftime("%d.%m.%Y"), "Time": e_time,
                                 "Anesthesia": e_anes, "Comorbidities": e_comorb
                             })
+                            # Deletes the cached message so the UI refreshes instantly
+                            if f"msg_{index}" in st.session_state:
+                                del st.session_state[f"msg_{index}"]
                             st.rerun()
 
             with col2:
