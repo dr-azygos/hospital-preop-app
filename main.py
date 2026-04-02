@@ -3,7 +3,7 @@ import urllib.parse
 from datetime import datetime, timedelta
 import json
 from github import Github
-import uuid # <--- NEW: Gives every patient a unique ID tag
+import uuid
 
 # --- APP CONFIGURATION ---
 st.set_page_config(page_title="Pre-Op Dispatcher", page_icon="👁️", layout="wide")
@@ -46,27 +46,8 @@ COMORB_OPTS = ["None (No HTN, No DM)", "Only HTN", "Only DM", "Both HTN & DM"]
 start_time = datetime.strptime("07:45 AM", "%I:%M %p")
 TIME_OPTIONS = [(start_time + timedelta(minutes=15*i)).strftime("%I:%M %p") for i in range(42)]
 
-# --- NEW CALLBACK FUNCTIONS (Runs before the screen redraws) ---
-def delete_patient(p_id):
-    st.session_state.patient_list = [p for p in st.session_state.patient_list if p.get("id") != p_id]
-
-def apply_changes(p_id):
-    # Finds the specific patient by ID and updates them directly from the form's memory
-    for i, p in enumerate(st.session_state.patient_list):
-        if p.get("id") == p_id:
-            st.session_state.patient_list[i].update({
-                "Name": st.session_state[f"ename_{p_id}"],
-                "Phone": st.session_state[f"ephone_{p_id}"],
-                "Branch": st.session_state[f"ebranch_{p_id}"],
-                "Date": st.session_state[f"edate_{p_id}"].strftime("%d.%m.%Y"),
-                "Time": st.session_state[f"etime_{p_id}"],
-                "Anesthesia": st.session_state[f"eanes_{p_id}"],
-                "Comorbidities": st.session_state[f"ecomorb_{p_id}"]
-            })
-            # Wipes the old text box memory so the new one generates instantly
-            if f"msg_{p_id}" in st.session_state:
-                del st.session_state[f"msg_{p_id}"]
-            break
+def delete_patient(index):
+    st.session_state.patient_list.pop(index)
 
 # --- CLOUD DATABASE FUNCTIONS ---
 def get_github_repo():
@@ -93,6 +74,31 @@ def load_from_cloud():
         st.error(f"Cloud Load Error: {e}")
         return []
 
+# --- 🪄 NEW: THE POP-UP EDIT BOX ---
+@st.dialog("✏️ Edit Patient Details")
+def edit_patient_dialog(pt, index):
+    st.markdown(f"**Editing:** {pt['Name']}")
+    
+    e_name = st.text_input("Name", pt['Name'])
+    e_phone = st.text_input("Phone", pt['Phone'])
+    e_branch = st.selectbox("Branch", BRANCHES, index=BRANCHES.index(pt['Branch']) if pt['Branch'] in BRANCHES else 0)
+    
+    saved_date = datetime.strptime(pt['Date'], "%d.%m.%Y").date()
+    e_date = st.date_input("Date", saved_date)
+    
+    e_time = st.selectbox("Time", TIME_OPTIONS, index=TIME_OPTIONS.index(pt['Time']) if pt['Time'] in TIME_OPTIONS else 0)
+    e_anes = st.radio("Anesthesia", ANESTHESIA_OPTS, index=ANESTHESIA_OPTS.index(pt['Anesthesia']) if pt['Anesthesia'] in ANESTHESIA_OPTS else 0)
+    e_comorb = st.selectbox("Comorbidities", COMORB_OPTS, index=COMORB_OPTS.index(pt['Comorbidities']) if pt['Comorbidities'] in COMORB_OPTS else 0)
+    
+    if st.button("💾 Apply Changes", type="primary", use_container_width=True):
+        st.session_state.patient_list[index].update({
+            "Name": e_name, "Phone": e_phone, "Branch": e_branch,
+            "Date": e_date.strftime("%d.%m.%Y"), "Time": e_time,
+            "Anesthesia": e_anes, "Comorbidities": e_comorb,
+            "version": pt["version"] + 1  # Forces the text box to refresh instantly
+        })
+        st.rerun()
+
 # --- SIDEBAR: DATA ENTRY ---
 with st.sidebar:
     st.header("➕ Add New Patient")
@@ -117,7 +123,8 @@ with st.sidebar:
                 st.error("⚠️ Please provide a valid name and number.")
             else:
                 st.session_state.patient_list.append({
-                    "id": str(uuid.uuid4()), # Assigns a permanent invisible ID
+                    "id": str(uuid.uuid4()), 
+                    "version": 1, 
                     "Name": patient_name, "Phone": phone_number.replace("+", ""), "Branch": branch,
                     "Date": surgery_date.strftime("%d.%m.%Y"), "Time": reporting_time,
                     "Anesthesia": anesthesia, "Comorbidities": comorbidities
@@ -127,7 +134,6 @@ with st.sidebar:
     # --- CLOUD SYNC BUTTONS ---
     st.divider()
     st.header("☁️ Cloud Sync")
-    st.info("Don't forget to Save after adding or editing patients!")
     
     col1, col2 = st.columns(2)
     with col1:
@@ -157,13 +163,11 @@ else:
     st.markdown(f"**Total Patients in Queue:** {len(st.session_state.patient_list)}")
     st.divider()
 
-    for pt in st.session_state.patient_list:
+    for index, pt in enumerate(st.session_state.patient_list):
         
-        # Backward compatibility for old saved patients that don't have an ID yet
-        if "id" not in pt:
-            pt["id"] = str(uuid.uuid4())
-        
-        p_id = pt["id"]
+        # Backward compatibility
+        if "id" not in pt: pt["id"] = str(uuid.uuid4())
+        if "version" not in pt: pt["version"] = 1
         
         rep_time_obj = datetime.strptime(pt['Time'], "%I:%M %p")
         two_hours_prior = (rep_time_obj - timedelta(hours=2)).strftime("%I:%M %p")
@@ -203,32 +207,18 @@ else:
                 st.write(f"**{pt['Branch']}** | {dos} @ {pt['Time']}")
                 st.caption(f"{pt['Anesthesia']} | {pt['Comorbidities']}")
                 
-                # --- EDIT DETAILS TOOL (FIXED WITH CALLBACKS) ---
-                with st.expander("✏️ Edit Details"):
-                    with st.form(f"edit_form_{p_id}"):
-                        st.text_input("Name", pt['Name'], key=f"ename_{p_id}")
-                        st.text_input("Phone", pt['Phone'], key=f"ephone_{p_id}")
-                        st.selectbox("Branch", BRANCHES, index=BRANCHES.index(pt['Branch']) if pt['Branch'] in BRANCHES else 0, key=f"ebranch_{p_id}")
-                        
-                        saved_date = datetime.strptime(pt['Date'], "%d.%m.%Y").date()
-                        st.date_input("Date", saved_date, key=f"edate_{p_id}")
-                        
-                        st.selectbox("Time", TIME_OPTIONS, index=TIME_OPTIONS.index(pt['Time']) if pt['Time'] in TIME_OPTIONS else 0, key=f"etime_{p_id}")
-                        st.radio("Anesthesia", ANESTHESIA_OPTS, index=ANESTHESIA_OPTS.index(pt['Anesthesia']) if pt['Anesthesia'] in ANESTHESIA_OPTS else 0, key=f"eanes_{p_id}")
-                        st.selectbox("Comorbidities", COMORB_OPTS, index=COMORB_OPTS.index(pt['Comorbidities']) if pt['Comorbidities'] in COMORB_OPTS else 0, key=f"ecomorb_{p_id}")
-                        
-                        # When clicked, this fires the callback function we wrote at the top
-                        st.form_submit_button("💾 Apply Changes", on_click=apply_changes, args=(p_id,))
+                # Triggers the Pop-up Window!
+                if st.button("✏️ Edit Details", key=f"edit_btn_{pt['id']}", use_container_width=True):
+                    edit_patient_dialog(pt, index)
 
             with col2:
-                final_msg = st.text_area("Message Preview:", value=draft, height=280, key=f"msg_{p_id}", label_visibility="collapsed")
+                # Text box updates instantly using the version key
+                final_msg = st.text_area("Message Preview:", value=draft, height=280, key=f"msg_{pt['id']}_{pt['version']}", label_visibility="collapsed")
             with col3:
                 encoded_message = urllib.parse.quote(final_msg)
                 whatsapp_url = f"https://wa.me/{pt['Phone']}?text={encoded_message}"
                 st.markdown(f"""<a href="{whatsapp_url}" target="_blank" style="text-decoration: none;"><button style="background-color:#25D366; color:white; padding:10px; border:none; border-radius:5px; cursor:pointer; width:100%; font-weight:bold; margin-bottom:10px;">💬 Send WhatsApp</button></a>""", unsafe_allow_html=True)
-                
-                # The delete button now also safely uses the unique ID
-                st.button("❌ Remove", key=f"del_{p_id}", on_click=delete_patient, args=(p_id,), use_container_width=True)
+                st.button("❌ Remove", key=f"del_{pt['id']}", on_click=delete_patient, args=(index,), use_container_width=True)
             st.divider()
 
     if st.button("🗑️ Clear List (End of Day)"):
