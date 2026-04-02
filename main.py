@@ -2,7 +2,7 @@ import streamlit as st
 import urllib.parse
 from datetime import datetime, timedelta
 import json
-from github import Github # The new cloud database tool
+from github import Github
 
 # --- APP CONFIGURATION ---
 st.set_page_config(page_title="Pre-Op Dispatcher", page_icon="👁️", layout="wide")
@@ -34,16 +34,23 @@ if not st.session_state.authenticated:
             st.error("❌ Incorrect Password.")
     st.stop() 
 
-# --- INITIALIZE MEMORY ---
+# --- HOSPITAL CONSTANTS & MEMORY ---
 if 'patient_list' not in st.session_state:
     st.session_state.patient_list = []
+
+# Generate standardized options so both the sidebar and edit menus can use them
+BRANCHES = ["New Colony", "Mihan"]
+ANESTHESIA_OPTS = ["Local Anesthesia (LA)", "Fasting (NPM)"]
+COMORB_OPTS = ["None (No HTN, No DM)", "Only HTN", "Only DM", "Both HTN & DM"]
+
+start_time = datetime.strptime("07:45 AM", "%I:%M %p")
+TIME_OPTIONS = [(start_time + timedelta(minutes=15*i)).strftime("%I:%M %p") for i in range(42)]
 
 def delete_patient(index):
     st.session_state.patient_list.pop(index)
 
 # --- CLOUD DATABASE FUNCTIONS ---
 def get_github_repo():
-    # Logs into GitHub using the secret badge you saved in Streamlit Settings
     g = Github(st.secrets["GITHUB_TOKEN"])
     return g.get_repo(st.secrets["GITHUB_REPO"])
 
@@ -52,7 +59,6 @@ def save_to_cloud(data_list):
         repo = get_github_repo()
         contents = repo.get_contents("database.json")
         json_string = json.dumps(data_list, indent=4)
-        # Overwrites the old database.json with your new list
         repo.update_file(contents.path, "Backup from App", json_string, contents.sha)
         return True
     except Exception as e:
@@ -63,7 +69,6 @@ def load_from_cloud():
     try:
         repo = get_github_repo()
         contents = repo.get_contents("database.json")
-        # Reads the file and turns it back into a Python list
         return json.loads(contents.decoded_content.decode("utf-8"))
     except Exception as e:
         st.error(f"Cloud Load Error: {e}")
@@ -76,18 +81,15 @@ with st.sidebar:
     with st.form("patient_form", clear_on_submit=True):
         patient_name = st.text_input("Patient Name*")
         phone_number = st.text_input("WhatsApp Number*", value="91", help="Country code + number") 
-        branch = st.selectbox("Hospital Branch", ["New Colony", "Mihan"])
+        branch = st.selectbox("Hospital Branch", BRANCHES)
         
         tomorrow = datetime.now() + timedelta(days=1)
         surgery_date = st.date_input("Date of Surgery", value=tomorrow)
-        
-        start_time = datetime.strptime("07:45 AM", "%I:%M %p")
-        time_options = [(start_time + timedelta(minutes=15*i)).strftime("%I:%M %p") for i in range(42)]
-        reporting_time = st.selectbox("Reporting Time", time_options)
+        reporting_time = st.selectbox("Reporting Time", TIME_OPTIONS)
         
         st.markdown("### Clinical Details")
-        anesthesia = st.radio("Anesthesia / Diet", ["Local Anesthesia (LA)", "Fasting (NPM)"])
-        comorbidities = st.selectbox("Comorbidities", ["None (No HTN, No DM)", "Only HTN", "Only DM", "Both HTN & DM"])
+        anesthesia = st.radio("Anesthesia / Diet", ANESTHESIA_OPTS)
+        comorbidities = st.selectbox("Comorbidities", COMORB_OPTS)
         
         submitted = st.form_submit_button("Add to Queue", type="primary", use_container_width=True)
 
@@ -102,19 +104,20 @@ with st.sidebar:
                 })
                 st.success(f"Added {patient_name}!")
 
-    # --- THE NEW CLOUD SYNC BUTTONS ---
+    # --- CLOUD SYNC BUTTONS ---
     st.divider()
     st.header("☁️ Cloud Sync")
+    st.info("Don't forget to Save after adding or editing patients!")
     
     col1, col2 = st.columns(2)
     with col1:
         if st.button("💾 Save", use_container_width=True):
-            with st.spinner("Saving to GitHub..."):
+            with st.spinner("Saving..."):
                 if save_to_cloud(st.session_state.patient_list):
                     st.success("Saved!")
     with col2:
         if st.button("🔄 Load", use_container_width=True):
-            with st.spinner("Fetching data..."):
+            with st.spinner("Loading..."):
                 st.session_state.patient_list = load_from_cloud()
                 st.rerun()
 
@@ -139,6 +142,7 @@ else:
         two_hours_prior = (rep_time_obj - timedelta(hours=2)).strftime("%I:%M %p")
         dos = pt['Date']
         
+        # --- SURAJ EYE INSTITUTE MESSAGE LOGIC ---
         draft = f"Dear {pt['Name']},\nGreetings from Suraj Eye Institute, Nagpur.\nYour surgery has been scheduled on {dos}.\n\n"
         
         if pt['Anesthesia'] == "Local Anesthesia (LA)":
@@ -164,14 +168,39 @@ else:
         draft += f"\n\nReport to hospital at Suraj Eye Institute {pt['Branch']} branch at {pt['Time']}."
         draft += "\n\nKindly make your surgery payments using the UPI details above before surgery. Kind regards.\nSEI Services."
 
+        # --- UI CARD ---
         with st.container():
             col1, col2, col3 = st.columns([1, 3, 1])
             with col1:
                 st.subheader(f"👤 {pt['Name']}")
                 st.write(f"**{pt['Branch']}** | {dos} @ {pt['Time']}")
                 st.caption(f"{pt['Anesthesia']} | {pt['Comorbidities']}")
+                
+                # --- NEW: EDIT DETAILS TOOL ---
+                with st.expander("✏️ Edit Details"):
+                    with st.form(f"edit_form_{index}"):
+                        e_name = st.text_input("Name", pt['Name'])
+                        e_phone = st.text_input("Phone", pt['Phone'])
+                        e_branch = st.selectbox("Branch", BRANCHES, index=BRANCHES.index(pt['Branch']) if pt['Branch'] in BRANCHES else 0)
+                        
+                        # Convert saved string back to a date object for the calendar
+                        saved_date = datetime.strptime(pt['Date'], "%d.%m.%Y").date()
+                        e_date = st.date_input("Date", saved_date)
+                        
+                        e_time = st.selectbox("Time", TIME_OPTIONS, index=TIME_OPTIONS.index(pt['Time']) if pt['Time'] in TIME_OPTIONS else 0)
+                        e_anes = st.radio("Anesthesia", ANESTHESIA_OPTS, index=ANESTHESIA_OPTS.index(pt['Anesthesia']) if pt['Anesthesia'] in ANESTHESIA_OPTS else 0)
+                        e_comorb = st.selectbox("Comorbidities", COMORB_OPTS, index=COMORB_OPTS.index(pt['Comorbidities']) if pt['Comorbidities'] in COMORB_OPTS else 0)
+                        
+                        if st.form_submit_button("💾 Apply Changes"):
+                            st.session_state.patient_list[index].update({
+                                "Name": e_name, "Phone": e_phone, "Branch": e_branch,
+                                "Date": e_date.strftime("%d.%m.%Y"), "Time": e_time,
+                                "Anesthesia": e_anes, "Comorbidities": e_comorb
+                            })
+                            st.rerun()
+
             with col2:
-                final_msg = st.text_area("Message Preview:", value=draft, height=260, key=f"msg_{index}", label_visibility="collapsed")
+                final_msg = st.text_area("Message Preview:", value=draft, height=280, key=f"msg_{index}", label_visibility="collapsed")
             with col3:
                 encoded_message = urllib.parse.quote(final_msg)
                 whatsapp_url = f"https://wa.me/{pt['Phone']}?text={encoded_message}"
@@ -181,5 +210,5 @@ else:
 
     if st.button("🗑️ Clear List (End of Day)"):
         st.session_state.patient_list = []
-        save_to_cloud([]) # Wipes the cloud memory clean too!
+        save_to_cloud([]) 
         st.rerun()
