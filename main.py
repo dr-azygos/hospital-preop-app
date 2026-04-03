@@ -8,18 +8,8 @@ import uuid
 # --- APP CONFIGURATION ---
 st.set_page_config(page_title="Pre-Op Dispatcher", page_icon="👁️", layout="wide")
 
-# --- DR. AZYGOS WATERMARK ---
-st.markdown(
-    """
-    <style>
-    .watermark { position: fixed; bottom: 20px; left: 20px; font-size: 16px; color: #888888; z-index: 999999; pointer-events: none; font-style: italic; font-weight: bold; }
-    </style>
-    <div class="watermark">Designed by dr.azygos</div>
-    """, unsafe_allow_html=True
-)
-
 # --- 🔒 SECURITY GATE ---
-HOSPITAL_PASSWORD = "123" 
+HOSPITAL_PASSWORD = "1234" 
 if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
 
@@ -74,13 +64,17 @@ def load_from_cloud():
         st.error(f"Cloud Load Error: {e}")
         return []
 
-# --- 🪄 NEW: THE POP-UP EDIT BOX ---
+# --- 🪄 THE POP-UP EDIT BOX ---
 @st.dialog("✏️ Edit Patient Details")
 def edit_patient_dialog(pt, index):
     st.markdown(f"**Editing:** {pt['Name']}")
     
     e_name = st.text_input("Name", pt['Name'])
-    e_phone = st.text_input("Phone", pt['Phone'])
+    
+    # Numbers are explicitly stacked here
+    e_phone = st.text_input("Primary WhatsApp*", pt['Phone'])
+    e_sec_phone = st.text_input("Secondary WhatsApp (Optional)", pt.get('SecPhone', ''))
+    
     e_branch = st.selectbox("Branch", BRANCHES, index=BRANCHES.index(pt['Branch']) if pt['Branch'] in BRANCHES else 0)
     
     saved_date = datetime.strptime(pt['Date'], "%d.%m.%Y").date()
@@ -92,10 +86,15 @@ def edit_patient_dialog(pt, index):
     
     if st.button("💾 Apply Changes", type="primary", use_container_width=True):
         st.session_state.patient_list[index].update({
-            "Name": e_name, "Phone": e_phone, "Branch": e_branch,
-            "Date": e_date.strftime("%d.%m.%Y"), "Time": e_time,
-            "Anesthesia": e_anes, "Comorbidities": e_comorb,
-            "version": pt["version"] + 1  # Forces the text box to refresh instantly
+            "Name": e_name, 
+            "Phone": e_phone.replace("+", ""), 
+            "SecPhone": e_sec_phone.replace("+", ""),
+            "Branch": e_branch,
+            "Date": e_date.strftime("%d.%m.%Y"), 
+            "Time": e_time,
+            "Anesthesia": e_anes, 
+            "Comorbidities": e_comorb,
+            "version": pt.get("version", 1) + 1  
         })
         st.rerun()
 
@@ -105,7 +104,11 @@ with st.sidebar:
     
     with st.form("patient_form", clear_on_submit=True):
         patient_name = st.text_input("Patient Name*")
-        phone_number = st.text_input("WhatsApp Number*", value="91", help="Country code + number") 
+        
+        # Numbers explicitly stacked in sidebar
+        phone_number = st.text_input("Primary WhatsApp*", value="91", help="Country code + number") 
+        sec_phone_number = st.text_input("Secondary WhatsApp (Optional)", value="", help="Leave completely blank if none")
+        
         branch = st.selectbox("Hospital Branch", BRANCHES)
         
         tomorrow = datetime.now() + timedelta(days=1)
@@ -119,15 +122,20 @@ with st.sidebar:
         submitted = st.form_submit_button("Add to Queue", type="primary", use_container_width=True)
 
         if submitted:
-            if not patient_name or phone_number.strip() == "" or phone_number == "91":
-                st.error("⚠️ Please provide a valid name and number.")
+            if not patient_name or phone_number.strip() in ["", "91", "+91"]:
+                st.error("⚠️ Please provide a valid name and primary number.")
             else:
                 st.session_state.patient_list.append({
                     "id": str(uuid.uuid4()), 
                     "version": 1, 
-                    "Name": patient_name, "Phone": phone_number.replace("+", ""), "Branch": branch,
-                    "Date": surgery_date.strftime("%d.%m.%Y"), "Time": reporting_time,
-                    "Anesthesia": anesthesia, "Comorbidities": comorbidities
+                    "Name": patient_name, 
+                    "Phone": phone_number.replace("+", ""), 
+                    "SecPhone": sec_phone_number.replace("+", "") if sec_phone_number.strip() not in ["", "91"] else "",
+                    "Branch": branch,
+                    "Date": surgery_date.strftime("%d.%m.%Y"), 
+                    "Time": reporting_time,
+                    "Anesthesia": anesthesia, 
+                    "Comorbidities": comorbidities
                 })
                 st.success(f"Added {patient_name}!")
 
@@ -165,9 +173,10 @@ else:
 
     for index, pt in enumerate(st.session_state.patient_list):
         
-        # Backward compatibility
+        # Backward compatibility for old saves
         if "id" not in pt: pt["id"] = str(uuid.uuid4())
         if "version" not in pt: pt["version"] = 1
+        if "SecPhone" not in pt: pt["SecPhone"] = ""
         
         rep_time_obj = datetime.strptime(pt['Time'], "%I:%M %p")
         two_hours_prior = (rep_time_obj - timedelta(hours=2)).strftime("%I:%M %p")
@@ -207,17 +216,27 @@ else:
                 st.write(f"**{pt['Branch']}** | {dos} @ {pt['Time']}")
                 st.caption(f"{pt['Anesthesia']} | {pt['Comorbidities']}")
                 
-                # Triggers the Pop-up Window!
                 if st.button("✏️ Edit Details", key=f"edit_btn_{pt['id']}", use_container_width=True):
                     edit_patient_dialog(pt, index)
 
             with col2:
-                # Text box updates instantly using the version key
                 final_msg = st.text_area("Message Preview:", value=draft, height=280, key=f"msg_{pt['id']}_{pt['version']}", label_visibility="collapsed")
             with col3:
                 encoded_message = urllib.parse.quote(final_msg)
-                whatsapp_url = f"https://wa.me/{pt['Phone']}?text={encoded_message}"
-                st.markdown(f"""<a href="{whatsapp_url}" target="_blank" style="text-decoration: none;"><button style="background-color:#25D366; color:white; padding:10px; border:none; border-radius:5px; cursor:pointer; width:100%; font-weight:bold; margin-bottom:10px;">💬 Send WhatsApp</button></a>""", unsafe_allow_html=True)
+                
+                # --- EXPLICIT WHATSAPP BUTTONS ---
+                
+                # 1. Primary WhatsApp Button
+                whatsapp_url_1 = f"https://wa.me/{pt['Phone']}?text={encoded_message}"
+                st.markdown(f"""<a href="{whatsapp_url_1}" target="_blank" style="text-decoration: none;"><button style="background-color:#25D366; color:white; padding:10px; border:none; border-radius:5px; cursor:pointer; width:100%; font-weight:bold; margin-bottom:10px;">💬 Send WhatsApp (Primary)</button></a>""", unsafe_allow_html=True)
+                
+                # 2. Secondary WhatsApp Button (Only shows if a valid secondary number exists)
+                sec_phone = pt.get('SecPhone', '').strip()
+                if sec_phone and sec_phone not in ["", "91", "+91"]:
+                    whatsapp_url_2 = f"https://wa.me/{sec_phone}?text={encoded_message}"
+                    st.markdown(f"""<a href="{whatsapp_url_2}" target="_blank" style="text-decoration: none;"><button style="background-color:#128C7E; color:white; padding:10px; border:none; border-radius:5px; cursor:pointer; width:100%; font-weight:bold; margin-bottom:10px;">💬 Send WhatsApp (Secondary)</button></a>""", unsafe_allow_html=True)
+                
+                # 3. Remove Button
                 st.button("❌ Remove", key=f"del_{pt['id']}", on_click=delete_patient, args=(index,), use_container_width=True)
             st.divider()
 
