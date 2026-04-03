@@ -9,7 +9,7 @@ import uuid
 st.set_page_config(page_title="Pre-Op Dispatcher", page_icon="👁️", layout="wide")
 
 # --- 🔒 SECURITY GATE ---
-HOSPITAL_PASSWORD = "1234" 
+HOSPITAL_PASSWORD = "12345" 
 if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
 
@@ -71,9 +71,9 @@ def edit_patient_dialog(pt, index):
     
     e_name = st.text_input("Name", pt['Name'])
     
-    # Numbers are explicitly stacked here
     e_phone = st.text_input("Primary WhatsApp*", pt['Phone'])
-    e_sec_phone = st.text_input("Secondary WhatsApp (Optional)", pt.get('SecPhone', ''))
+    # Defaults to 91 if it was previously empty
+    e_sec_phone = st.text_input("Secondary WhatsApp (Optional)", pt.get('SecPhone') if pt.get('SecPhone') else "91")
     
     e_branch = st.selectbox("Branch", BRANCHES, index=BRANCHES.index(pt['Branch']) if pt['Branch'] in BRANCHES else 0)
     
@@ -88,7 +88,8 @@ def edit_patient_dialog(pt, index):
         st.session_state.patient_list[index].update({
             "Name": e_name, 
             "Phone": e_phone.replace("+", ""), 
-            "SecPhone": e_sec_phone.replace("+", ""),
+            # Prevents saving just "91" as a valid number
+            "SecPhone": e_sec_phone.replace("+", "") if e_sec_phone.strip() not in ["", "91", "+91"] else "",
             "Branch": e_branch,
             "Date": e_date.strftime("%d.%m.%Y"), 
             "Time": e_time,
@@ -105,9 +106,9 @@ with st.sidebar:
     with st.form("patient_form", clear_on_submit=True):
         patient_name = st.text_input("Patient Name*")
         
-        # Numbers explicitly stacked in sidebar
         phone_number = st.text_input("Primary WhatsApp*", value="91", help="Country code + number") 
-        sec_phone_number = st.text_input("Secondary WhatsApp (Optional)", value="", help="Leave completely blank if none")
+        # Secondary now defaults to 91
+        sec_phone_number = st.text_input("Secondary WhatsApp (Optional)", value="91", help="Leave as 91 if none")
         
         branch = st.selectbox("Hospital Branch", BRANCHES)
         
@@ -130,7 +131,8 @@ with st.sidebar:
                     "version": 1, 
                     "Name": patient_name, 
                     "Phone": phone_number.replace("+", ""), 
-                    "SecPhone": sec_phone_number.replace("+", "") if sec_phone_number.strip() not in ["", "91"] else "",
+                    # Ignores it if it's just "91"
+                    "SecPhone": sec_phone_number.replace("+", "") if sec_phone_number.strip() not in ["", "91", "+91"] else "",
                     "Branch": branch,
                     "Date": surgery_date.strftime("%d.%m.%Y"), 
                     "Time": reporting_time,
@@ -226,17 +228,14 @@ else:
                 
                 # --- EXPLICIT WHATSAPP BUTTONS ---
                 
-                # 1. Primary WhatsApp Button
                 whatsapp_url_1 = f"https://wa.me/{pt['Phone']}?text={encoded_message}"
                 st.markdown(f"""<a href="{whatsapp_url_1}" target="_blank" style="text-decoration: none;"><button style="background-color:#25D366; color:white; padding:10px; border:none; border-radius:5px; cursor:pointer; width:100%; font-weight:bold; margin-bottom:10px;">💬 Send WhatsApp (Primary)</button></a>""", unsafe_allow_html=True)
                 
-                # 2. Secondary WhatsApp Button (Only shows if a valid secondary number exists)
                 sec_phone = pt.get('SecPhone', '').strip()
                 if sec_phone and sec_phone not in ["", "91", "+91"]:
                     whatsapp_url_2 = f"https://wa.me/{sec_phone}?text={encoded_message}"
                     st.markdown(f"""<a href="{whatsapp_url_2}" target="_blank" style="text-decoration: none;"><button style="background-color:#128C7E; color:white; padding:10px; border:none; border-radius:5px; cursor:pointer; width:100%; font-weight:bold; margin-bottom:10px;">💬 Send WhatsApp (Secondary)</button></a>""", unsafe_allow_html=True)
                 
-                # 3. Remove Button
                 st.button("❌ Remove", key=f"del_{pt['id']}", on_click=delete_patient, args=(index,), use_container_width=True)
             st.divider()
 
