@@ -13,7 +13,7 @@
     },
     {
         "id": "e0ce8476-f558-4923-bab4-6c479ddbd1e4",
-        "version": 1,
+        "version": 2,
         "Name": "REKHA MAHAJAN",
         "Phone": "918087263432",
         "SecPhone": "",
@@ -21,6 +21,6 @@
         "Date": "06.04.2026",
         "Time": "07:45 AM",
         "Anesthesia": "Local Anesthesia (LA)",
-        "Comorbidities": "None (No HTN, No DM)"
+        "Comorbidities": "Only HTN"
     }
 ]
