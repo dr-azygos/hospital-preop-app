@@ -73,7 +73,7 @@
     },
     {
         "id": "59060254-ac4c-43bd-97df-2ae52380ec56",
-        "version": 1,
+        "version": 2,
         "Name": "SALMA SHEIKH",
         "Phone": "919358348437",
         "SecPhone": "919356548457",
@@ -81,7 +81,7 @@
         "Date": "09.04.2026",
         "Time": "07:45 AM",
         "Anesthesia": "Local Anesthesia (LA)",
-        "Comorbidities": "Only DM"
+        "Comorbidities": "Both HTN & DM"
     },
     {
         "id": "3ebc8703-c5a8-4d65-9bcf-51a95be580ce",
